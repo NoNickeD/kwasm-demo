@@ -1,136 +1,107 @@
-# KWasm Demo
+A Simple Go Application Running as WebAssembly (WASM) Using Spin, Deployed on a Kubernetes Cluster
 
-This repository provides a comprehensive demo of integrating WebAssembly (Wasm) with Kubernetes using KWasm. The demo includes setting up a Kind cluster, installing the KWasm operator, and deploying Wasm applications.
+### Prerequisites
 
-## Step 1: Create a Kind Cluster
+Before you begin, ensure the following are installed on your system:
 
-Create a Kind cluster using the provided configuration. Save the following YAML into a file named `kind-config.yaml`:
+- [Go](https://go.dev/dl/)
+- [TinyGo](https://tinygo.org/getting-started/install/)
+- [Docker](https://www.docker.com/products/docker-desktop/)
+- [Kind](https://kind.sigs.k8s.io)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh)
+- [Spin](https://developer.fermyon.com/spin/v2/install)
 
-```yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-    extraPortMappings:
-      - containerPort: 80
-        hostPort: 80
-        protocol: TCP
-      - containerPort: 443
-        hostPort: 443
-        protocol: TCP
-```
+### Getting Started
 
-## Step 2: Install KWasm Operator
-
-Add the Helm repository and install the KWasm operator:
+- Clone the Repository
 
 ```bash
-helm repo add kwasm http://kwasm.sh/kwasm-operator/
+git clone https://github.com/NoNickeD/kwasm-demo.git
+cd kwasm-demo
+```
+
+- Build the WASM Application
+
+```bash
+cd go-demo-app
+
+spin build
+```
+
+- Push the WASM Module to a Registry
+
+```bash
+spin registry push ttl.sh/wasm-go-demo-app:v0.1.1
+```
+
+### Set Up the Kubernetes Cluster
+
+- Create a Kind Cluster
+
+```bash
+kind create cluster --config kind-config.yaml
+```
+
+- Install the kwasm Operator
+
+```bash
 helm install -n kwasm --create-namespace kwasm-operator kwasm/kwasm-operator
 ```
 
-Annotate the nodes to indicate that they are ready for KWasm:
+- Annotate Nodes
 
 ```bash
-kubectl annotate node --all kwasm.sh/kwasm-node=true
+kubectl annotate node kwasm.sh/kwasm-node=true --all
 ```
 
-## Step 3: Install Wasm Runtime and Create a Test Workload
+### Deploy the WASM Application
 
-Choose one of the following runtimes to install and test:
+- You can deploy using either `kubectl apply` or `kubectl kustomize`.
 
-### Option 1: WasmEdge
-
-Apply the following YAML to create a RuntimeClass and a test Job using WasmEdge:
+Using `kubectl apply`
 
 ```bash
-kubectl apply -f - <<EOF
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: wasmedge
-handler: wasmedge
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  creationTimestamp: null
-  name: wasm-test
-spec:
-  template:
-    metadata:
-      annotations:
-        module.wasm.image/variant: compat-smart
-      creationTimestamp: null
-    spec:
-      containers:
-      - image: wasmedge/example-wasi:latest
-        name: wasm-test
-        resources: {}
-      restartPolicy: Never
-      runtimeClassName: wasmedge
-  backoffLimit: 1
-EOF
+kubectl apply -f ./k8s/runtimeclass.yaml
+kubectl apply -f ./k8s/demo-app.yaml
 ```
 
-### Option 2: Spin
-
-Apply the following YAML to create a RuntimeClass and a Deployment using Spin:
+Using `kubectl kustomize`
 
 ```bash
-kubectl apply -f - <<EOF
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: wasmtime-spin
-handler: spin
-EOF
-
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: wasm-spin
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: wasm-spin
-  template:
-    metadata:
-      labels:
-        app: wasm-spin
-    spec:
-      runtimeClassName: wasmtime-spin
-      containers:
-      - name: spin-hello
-        image: ghcr.io/deislabs/containerd-wasm-shims/examples/spin-rust-hello:latest
-        command: ["/"]
-EOF
+kubectl apply -k ./k8s/
 ```
 
-## Step 4: Test the Deployment
-
-For the Spin runtime, you can test the deployment by port-forwarding and making a request:
+- Test the Deployment
 
 ```bash
-kubectl port-forward deployment/wasm-spin 8000:80
+kubectl port-forward svc/wasm-service 8080:8080
+curl -vvv http://localhost:8080
 ```
 
-In a separate terminal, test the application:
+### Repository Structure
 
-```bash
-curl localhost:8000/hello
+```
+├── LICENSE
+├── README.md
+├── go-demo-app
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── main.wasm
+│   └── spin.toml
+├── k8s
+│   ├── demo-app.yaml
+│   ├── kustomization.yaml
+│   └── runtimeclass.yaml
+└── kind-config.yaml
 ```
 
-You should see a response from the Wasm application.
+### Files Description
 
-# Conclusion
-
-WebAssembly is a transformative technology with significant advantages in performance, security, and portability. The integration of Wasm into the Kubernetes ecosystem through Kwasm marks a pivotal moment in its evolution, enabling Wasm applications to leverage the full power of Kubernetes' robust infrastructure and ecosystem. This advancement not only facilitates the adoption of Wasm in serverless and edge computing but also positions it as a strong contender for a wide range of cloud-native applications. As the ecosystem continues to grow, Wasm is poised to become a foundational technology in the modern software landscape.
+- `go-demo-app/main.go` This file contains the main application code written in Go, which runs as a WASM module.
+- `go-demo-app/spin.toml` Spin configuration file to build and deploy the WASM module.
+- `k8s/demo-app.yaml` Kubernetes deployment and service configuration for the WASM application.
+- `k8s/runtimeclass.yaml` Defines the runtime class for running the WASM application using Spin.
+- `k8s/kustomization.yaml` Kustomize configuration to apply the Kubernetes manifests.
+- `kind-config.yaml`Kind cluster configuration file to set up the local Kubernetes cluster
